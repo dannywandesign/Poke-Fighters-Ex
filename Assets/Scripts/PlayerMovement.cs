@@ -3,30 +3,44 @@ using UnityEngine;
 public class PlayerMovement : MonoBehaviour
 {
     [Header("Movement Settings")]
-    public float speed = 30f;
+    public float speed = 20f;
     public float rotationSpeed = 720f;
-    public float jumpForce = 12f; 
-    public float gravityMultiplier = 5f;
+    public float jumpHeight = 3f; 
+    public float gravity = -40f; 
 
-    private Rigidbody rb;
+    [Header("Detection Settings")]
+    public LayerMask groundLayer; 
+    public float rayDistance = 0.5f; // Keep this small (0.4 or 0.5)
+
+    private CharacterController controller;
     private Transform camTransform;
+    private Vector3 playerVelocity;
     private bool isGrounded;
 
     void Start()
     {
-        rb = GetComponent<Rigidbody>();
+        controller = GetComponent<CharacterController>();
         camTransform = Camera.main.transform;
-        
-        // Keep the capsule upright
-        rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
     }
 
     void Update()
     {
-        // 1. Simple Grounded Check
-        isGrounded = Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, 1.2f);
+        // 1. PHYSICAL GROUND CHECK
+        // We use the controller's built-in check for gravity so you don't "slow down" mid-air
+        isGrounded = controller.isGrounded;
 
-        // 2. Movement Logic
+        if (isGrounded && playerVelocity.y < 0)
+        {
+            // Only resets gravity when the capsule physically touches the floor
+            playerVelocity.y = -2f; 
+        }
+
+        // 2. SLOPE DETECTION (Raycast)
+        // We still use the raycast to find the angle of the ground for smooth walking
+        RaycastHit hit;
+        bool rayHitGround = Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, rayDistance, groundLayer, QueryTriggerInteraction.Ignore);
+
+        // 3. INPUT & ROTATION
         float h = Input.GetAxisRaw("Horizontal");
         float v = Input.GetAxisRaw("Vertical");
 
@@ -37,40 +51,30 @@ public class PlayerMovement : MonoBehaviour
         forward.Normalize();
         right.Normalize();
 
-        Vector3 moveDirection = (forward * v + right * h).normalized;
+        Vector3 move = (forward * v + right * h).normalized;
 
-        if (moveDirection != Vector3.zero)
+        if (move != Vector3.zero)
         {
-            // Rotate to face movement
-            Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
-            transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, Quaternion.LookRotation(move), rotationSpeed * Time.deltaTime);
             
-            // Set velocity directly for Speed 30 snappy movement
-            Vector3 vel = moveDirection * speed;
-            vel.y = rb.linearVelocity.y;
-            rb.linearVelocity = vel;
-        }
-        else if (isGrounded)
-        {
-            // Instant stop when keys are released
-            rb.linearVelocity = new Vector3(0, rb.linearVelocity.y, 0);
+            // If the ray sees a slope, tilt our movement to match it
+            if (rayHitGround) 
+            {
+                move = Vector3.ProjectOnPlane(move, hit.normal).normalized;
+            }
         }
 
-        // 3. Jump Logic
+        // 4. JUMP LOGIC
         if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
         {
-            rb.linearVelocity = new Vector3(rb.linearVelocity.x, 0, rb.linearVelocity.z);
-            rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+            playerVelocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
         }
-    }
 
-    void FixedUpdate()
-    {
-        // 4. Strong Gravity
-        // This keeps you on the ground at high speeds
-        if (!isGrounded)
-        {
-            rb.AddForce(Vector3.down * gravityMultiplier * 9.81f, ForceMode.Acceleration);
-        }
+        // 5. APPLY FINAL MOVEMENT
+        playerVelocity.y += gravity * Time.deltaTime;
+        
+        // We combine horizontal speed and vertical gravity into one Move call
+        Vector3 finalMove = (move * speed) + new Vector3(0, playerVelocity.y, 0);
+        controller.Move(finalMove * Time.deltaTime);
     }
 }
