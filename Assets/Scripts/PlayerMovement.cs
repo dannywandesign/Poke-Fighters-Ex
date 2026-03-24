@@ -10,7 +10,10 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Detection Settings")]
     public LayerMask groundLayer; 
-    public float rayDistance = 0.5f; // Keep this small (0.4 or 0.5)
+    public float rayDistance = 0.5f;
+
+    [Header("Ladder State")]
+    public bool isClimbing = false; // The LadderClimb script will turn this on/off
 
     private CharacterController controller;
     private Transform camTransform;
@@ -26,17 +29,14 @@ public class PlayerMovement : MonoBehaviour
     void Update()
     {
         // 1. PHYSICAL GROUND CHECK
-        // We use the controller's built-in check for gravity so you don't "slow down" mid-air
         isGrounded = controller.isGrounded;
 
         if (isGrounded && playerVelocity.y < 0)
         {
-            // Only resets gravity when the capsule physically touches the floor
             playerVelocity.y = -2f; 
         }
 
-        // 2. SLOPE DETECTION (Raycast)
-        // We still use the raycast to find the angle of the ground for smooth walking
+        // 2. SLOPE DETECTION
         RaycastHit hit;
         bool rayHitGround = Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, rayDistance, groundLayer, QueryTriggerInteraction.Ignore);
 
@@ -57,23 +57,32 @@ public class PlayerMovement : MonoBehaviour
         {
             transform.rotation = Quaternion.RotateTowards(transform.rotation, Quaternion.LookRotation(move), rotationSpeed * Time.deltaTime);
             
-            // If the ray sees a slope, tilt our movement to match it
             if (rayHitGround) 
             {
                 move = Vector3.ProjectOnPlane(move, hit.normal).normalized;
             }
         }
 
-        // 4. JUMP LOGIC
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+        // 4. JUMP LOGIC (Disabled while climbing)
+        if (Input.GetKeyDown(KeyCode.Space) && isGrounded && !isClimbing)
         {
             playerVelocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
         }
 
-        // 5. APPLY FINAL MOVEMENT
-        playerVelocity.y += gravity * Time.deltaTime;
+        // 5. APPLY GRAVITY (Only if NOT climbing)
+        if (!isClimbing)
+        {
+            playerVelocity.y += gravity * Time.deltaTime;
+        }
+        else
+        {
+            // Reset vertical velocity so you don't "fall fast" when letting go
+            playerVelocity.y = 0f; 
+        }
         
-        // We combine horizontal speed and vertical gravity into one Move call
+        // 6. FINAL MOVEMENT
+        // While climbing, we only apply horizontal move (W/A/S/D). 
+        // The LadderClimb script handles the vertical 'Up/Down' part.
         Vector3 finalMove = (move * speed) + new Vector3(0, playerVelocity.y, 0);
         controller.Move(finalMove * Time.deltaTime);
     }
