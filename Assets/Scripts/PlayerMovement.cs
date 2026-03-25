@@ -69,20 +69,32 @@ public class PlayerMovement : MonoBehaviour
             playerVelocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
         }
 
-        // 5. APPLY GRAVITY (Only if NOT climbing)
-        if (!isClimbing)
+        // 5. LADDER & GRAVITY LOGIC
+        if (isClimbing)
         {
-            playerVelocity.y += gravity * Time.deltaTime;
+            float vInput = Input.GetAxisRaw("Vertical");
+
+            if (vInput > 0.1f) 
+            {
+                // We are pressing "Up" - Move up and ignore gravity
+                playerVelocity.y = vInput * speed * 0.5f; 
+            }
+            else 
+            {
+                // We are NOT pressing "Up" - Let gravity pull us down the ladder
+                playerVelocity.y += gravity * Time.deltaTime;
+                
+                // Optional: Clamp sliding speed so you don't fall too fast 
+                playerVelocity.y = Mathf.Max(playerVelocity.y, -5f); 
+            }
         }
         else
         {
-            // Reset vertical velocity so you don't "fall fast" when letting go
-            playerVelocity.y = 0f; 
+            // Normal gravity when not on a ladder
+            playerVelocity.y += gravity * Time.deltaTime;
         }
         
         // 6. FINAL MOVEMENT
-        // While climbing, we only apply horizontal move (W/A/S/D). 
-        // The LadderClimb script handles the vertical 'Up/Down' part.
         Vector3 finalMove = (move * speed) + new Vector3(0, playerVelocity.y, 0);
         controller.Move(finalMove * Time.deltaTime);
     }
