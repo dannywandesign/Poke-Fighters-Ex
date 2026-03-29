@@ -5,20 +5,20 @@ public class PlayerMovement : MonoBehaviour
     [Header("Movement Settings")]
     public float speed = 20f;
     public float rotationSpeed = 720f;
-    public float jumpHeight = 3f; 
-    public float gravity = -40f; 
+    public float jumpHeight = 3f;
+    public float gravity = -40f;
 
     [Header("Detection Settings")]
-    public LayerMask groundLayer; 
+    public LayerMask groundLayer;
     public float rayDistance = 0.5f;
+    public float groundCheckDistance = 0.2f; 
 
     [Header("Ladder State")]
-    public bool isClimbing = false; // The LadderClimb script will turn this on/off
+    public bool isClimbing = false;
 
     private CharacterController controller;
     private Transform camTransform;
     private Vector3 playerVelocity;
-    private bool isGrounded;
 
     void Start()
     {
@@ -28,19 +28,32 @@ public class PlayerMovement : MonoBehaviour
 
     void Update()
     {
-        // 1. PHYSICAL GROUND CHECK
-        isGrounded = controller.isGrounded;
-
-        if (isGrounded && playerVelocity.y < 0)
+        // 1. ADVANCED GROUND & SLOPE CHECK
+        RaycastHit groundHit;
+        // We use a SphereCast downward to find the angle of the surface we are touching
+        bool hitSomething = Physics.SphereCast(transform.position, controller.radius, Vector3.down, out groundHit, groundCheckDistance, groundLayer);
+        
+        bool isOnValidSlope = false;
+        if (hitSomething)
         {
-            playerVelocity.y = -2f; 
+            // Calculate the angle between the ground normal and the Up direction
+            float slopeAngle = Vector3.Angle(Vector3.up, groundHit.normal);
+            // Only count as "Ground" if the angle is walkable (less than slopeLimit)
+            if (slopeAngle <= controller.slopeLimit)
+            {
+                isOnValidSlope = true;
+            }
         }
 
-        // 2. SLOPE DETECTION
-        RaycastHit hit;
-        bool rayHitGround = Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, out hit, rayDistance, groundLayer, QueryTriggerInteraction.Ignore);
+        // The player is "Actually Grounded" only if they are on a valid, non-vertical slope
+        bool actuallyGrounded = (controller.isGrounded || isOnValidSlope);
 
-        // 3. INPUT & ROTATION
+        if (actuallyGrounded && playerVelocity.y < 0)
+        {
+            playerVelocity.y = -5f; 
+        }
+
+        // 2. INPUT & ROTATION
         float h = Input.GetAxisRaw("Horizontal");
         float v = Input.GetAxisRaw("Vertical");
 
@@ -57,44 +70,41 @@ public class PlayerMovement : MonoBehaviour
         {
             transform.rotation = Quaternion.RotateTowards(transform.rotation, Quaternion.LookRotation(move), rotationSpeed * Time.deltaTime);
             
-            if (rayHitGround) 
+            // Re-use the groundHit normal to project movement onto the slope
+            if (hitSomething && isOnValidSlope)
             {
-                move = Vector3.ProjectOnPlane(move, hit.normal).normalized;
+                move = Vector3.ProjectOnPlane(move, groundHit.normal).normalized;
             }
         }
 
-        // 4. JUMP LOGIC (Disabled while climbing)
-        if (Input.GetKeyDown(KeyCode.Space) && isGrounded && !isClimbing)
+        // 3. CONTINUOUS JUMP LOGIC
+        // This will now fail if you are touching a vertical wall because isOnValidSlope will be false
+        if (Input.GetKey(KeyCode.Space) && actuallyGrounded && !isClimbing)
         {
+            playerVelocity.y = 0f; 
             playerVelocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
         }
 
-        // 5. LADDER & GRAVITY LOGIC
+        // 4. LADDER & GRAVITY LOGIC
         if (isClimbing)
         {
             float vInput = Input.GetAxisRaw("Vertical");
-
-            if (vInput > 0.1f) 
+            if (vInput > 0.1f)
             {
-                // We are pressing "Up" - Move up and ignore gravity
-                playerVelocity.y = vInput * speed * 0.5f; 
+                playerVelocity.y = vInput * speed * 0.5f;
             }
-            else 
+            else
             {
-                // We are NOT pressing "Up" - Let gravity pull us down the ladder
                 playerVelocity.y += gravity * Time.deltaTime;
-                
-                // Optional: Clamp sliding speed so you don't fall too fast 
-                playerVelocity.y = Mathf.Max(playerVelocity.y, -5f); 
+                playerVelocity.y = Mathf.Max(playerVelocity.y, -5f);
             }
         }
         else
         {
-            // Normal gravity when not on a ladder
             playerVelocity.y += gravity * Time.deltaTime;
         }
         
-        // 6. FINAL MOVEMENT
+        // 5. FINAL MOVEMENT
         Vector3 finalMove = (move * speed) + new Vector3(0, playerVelocity.y, 0);
         controller.Move(finalMove * Time.deltaTime);
     }
